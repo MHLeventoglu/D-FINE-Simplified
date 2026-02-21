@@ -474,7 +474,7 @@ def main(args):
     
     if args.resume:
         print(f"  Loading checkpoint: {args.resume}")
-        checkpoint = torch.load(args.resume, map_location="cpu")
+        checkpoint = torch.load(args.resume, map_location="cpu", weights_only=False)
         if "ema" in checkpoint and checkpoint["ema"]:
             state_dict = checkpoint["ema"]["module"]
         elif "model" in checkpoint:
@@ -490,13 +490,17 @@ def main(args):
     
     # PyTorch benchmark
     print("\n[3/5] Running PyTorch speed benchmark...")
-    results["pytorch_benchmark"] = benchmark_pytorch(
-        model, device,
-        warmup_iters=args.warmup_iters,
-        test_iters=args.test_iters
-    )
-    print(f"  Latency: {results['pytorch_benchmark']['pytorch_latency_ms']:.2f} ms")
-    print(f"  FPS: {results['pytorch_benchmark']['pytorch_fps']:.2f}")
+    if args.benchmark_pytorch:
+        results["pytorch_benchmark"] = benchmark_pytorch(
+            model, device,
+            warmup_iters=args.warmup_iters,
+            test_iters=args.test_iters
+        )
+        print(f"  Latency: {results['pytorch_benchmark']['pytorch_latency_ms']:.2f} ms")
+        print(f"  FPS: {results['pytorch_benchmark']['pytorch_fps']:.2f}")
+    else:
+        print("  Skipped (no --benchmark-pytorch flag provided)")
+        results["pytorch_benchmark"] = None
     
     # TensorRT benchmark
     print("\n[4/5] Running TensorRT speed benchmark...")
@@ -566,6 +570,8 @@ if __name__ == "__main__":
                         help="Path to TensorRT engine file for speed benchmark")
     
     # Benchmark settings
+    parser.add_argument("--benchmark-pytorch", action="store_true",
+                        help="Run PyTorch direct inference latency benchmark")
     parser.add_argument("--warmup-iters", type=int, default=50,
                         help="Number of warmup iterations for benchmark")
     parser.add_argument("--test-iters", type=int, default=200,
