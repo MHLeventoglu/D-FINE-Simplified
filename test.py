@@ -219,8 +219,10 @@ def benchmark_tensorrt(engine_path: str, input_size=(1, 3, 640, 640),
 
 
 @torch.no_grad()
-def evaluate_model(model, criterion, postprocessor, dataloader, evaluator, device) -> Dict:
+def evaluate_model(model, criterion, postprocessor, dataloader, evaluator, device, force_single_class=False) -> Dict:
     """Run full model evaluation and return all metrics."""
+    if hasattr(model, 'deploy'):
+        model = model.deploy()
     model.eval()
     if criterion:
         criterion.eval()
@@ -229,6 +231,12 @@ def evaluate_model(model, criterion, postprocessor, dataloader, evaluator, devic
     
     gt: List[Dict[str, torch.Tensor]] = []
     preds: List[Dict[str, torch.Tensor]] = []
+    
+    from collections import defaultdict
+    unique_gt_labels = set()
+    unique_pred_labels = set()
+    gt_label_counts = defaultdict(int)
+    pred_label_counts = defaultdict(int)
     
     print("\nRunning evaluation...")
     for i, (samples, targets) in enumerate(dataloader):
@@ -248,24 +256,65 @@ def evaluate_model(model, criterion, postprocessor, dataloader, evaluator, devic
         
         # Collect for Validator
         for idx, (target, result) in enumerate(zip(targets, results)):
+            gt_boxes_resized = target["boxes"].clone().cpu()
+            orig_h = target["orig_size"][1].item()
+            orig_w = target["orig_size"][0].item()
+            curr_h = samples.shape[-2]
+            curr_w = samples.shape[-1]
+            
+            gt_boxes_xyxy = scale_boxes(
+                gt_boxes_resized,
+                (orig_h, orig_w),
+                (curr_h, curr_w),
+            )
+            
+            gt_labels = target["labels"].cpu()
+            if force_single_class:
+                gt_labels = torch.zeros_like(gt_labels)
+                
             gt.append({
-                "boxes": scale_boxes(
-                    target["boxes"],
-                    (target["orig_size"][1], target["orig_size"][0]),
-                    (samples[idx].shape[-1], samples[idx].shape[-2]),
-                ),
-                "labels": target["labels"],
+                "boxes": gt_boxes_xyxy,
+                "labels": gt_labels,
             })
-            labels = (
+            
+            gt_labels_list = gt_labels.tolist()
+            unique_gt_labels.update(gt_labels_list)
+            for label in gt_labels_list:
+                gt_label_counts[label] += 1
+                
+            pred_boxes = result["boxes"].clone().cpu()
+            pred_scores = result["scores"].clone().cpu()
+            
+            pred_labels_tmp = (
                 torch.tensor([mscoco_category2label[int(x.item())] for x in result["labels"].flatten()])
                 .to(result["labels"].device)
                 .reshape(result["labels"].shape)
-            ) if postprocessor.remap_mscoco_category else result["labels"]
+            ) if postprocessor.remap_mscoco_category else result["labels"].clone()
+            
+            pred_labels = pred_labels_tmp.cpu()
+            if force_single_class:
+                pred_labels = torch.zeros_like(pred_labels)
+                
+            keep_idx = pred_scores >= 0.01
+            filtered_labels = pred_labels[keep_idx].tolist()
+            unique_pred_labels.update(filtered_labels)
+            for label in filtered_labels:
+                pred_label_counts[label] += 1
+                
             preds.append({
-                "boxes": result["boxes"], 
-                "labels": labels, 
-                "scores": result["scores"]
+                "boxes": pred_boxes, 
+                "labels": pred_labels, 
+                "scores": pred_scores
             })
+    
+    print("\nVeri Setindeki Class ID Dağılımı (Ground Truth):")
+    for cls_id in sorted(list(unique_gt_labels)):
+        print(f"  - ID {cls_id}: {gt_label_counts.get(cls_id, 0)} adet obje")
+        
+    print("\nModelin Tespit Ettiği Class ID Dağılımı (Pred):")
+    for cls_id in sorted(list(unique_pred_labels)):
+        print(f"  - ID {cls_id}: {pred_label_counts.get(cls_id, 0)} adet tespit")
+    print("-" * 40)
     
     # Compute Validator metrics
     validator = Validator(gt, preds, conf_thresh=0.5, iou_thresh=0.5)
@@ -484,8 +533,13 @@ def main(args):
         
         # Remove 'module.' prefix if present
         state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
-        model.load_state_dict(state_dict, strict=False)
-    
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
+        if missing:
+            print(f"\n[DİKKAT] Model yüklenirken bazı katmanlar atlandı! Bunlar arasında şunlar var:\n  {missing[:5]}")
+            print(">> Eğer sınıf başlığı (classification head) atlandıysa, config'deki 'num_classes' değeri eğitim yaptığınız modelle uyuşmuyor demektir!")
+            
+    if hasattr(model, 'deploy'):
+        model = model.deploy()
     model.eval()
     
     # PyTorch benchmark
@@ -527,7 +581,8 @@ def main(args):
     criterion = cfg.criterion.to(device) if hasattr(cfg, 'criterion') and cfg.criterion else None
     
     results["evaluation"] = evaluate_model(
-        model, criterion, postprocessor, val_dataloader, evaluator, device
+        model, criterion, postprocessor, val_dataloader, evaluator, device,
+        force_single_class=args.force_single_class
     )
     
     # Print key metrics
@@ -580,6 +635,9 @@ if __name__ == "__main__":
     # W&B
     parser.add_argument("--use-wandb", action="store_true",
                         help="Log results to Weights & Biases")
+    
+    parser.add_argument("--force-single-class", action="store_true",
+                        help="Tüm etiketleri ve tespitleri 0 sınıfına zorla (Custom finetune için)")
     
     # Config updates
     parser.add_argument("-u", "--update", nargs="+",
