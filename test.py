@@ -58,12 +58,14 @@ class TimeProfiler(contextlib.ContextDecorator):
 def get_model_info(cfg) -> Dict:
     """Get model FLOPs, MACs, and parameter count."""
     try:
+        import copy
         from calflops import calculate_flops
         
         class ModelForFlops(nn.Module):
             def __init__(self, model):
                 super().__init__()
-                self.model = model.deploy() if hasattr(model, 'deploy') else model
+                self.model = copy.deepcopy(model)
+                self.model = self.model.deploy() if hasattr(self.model, 'deploy') else self.model
 
             def forward(self, images):
                 return self.model(images)
@@ -221,8 +223,6 @@ def benchmark_tensorrt(engine_path: str, input_size=(1, 3, 640, 640),
 @torch.no_grad()
 def evaluate_model(model, criterion, postprocessor, dataloader, evaluator, device, force_single_class=False) -> Dict:
     """Run full model evaluation and return all metrics."""
-    if hasattr(model, 'deploy'):
-        model = model.deploy()
     model.eval()
     if criterion:
         criterion.eval()
@@ -511,14 +511,14 @@ def main(args):
         "config": dict(cfg.yaml_cfg) if hasattr(cfg, 'yaml_cfg') else {}
     }
     
-    # Get model info
-    print("\n[1/5] Getting model information...")
-    results["model_info"] = get_model_info(cfg)
-    print(f"  Parameters: {results['model_info'].get('parameters_str', 'N/A')}")
-    print(f"  FLOPs: {results['model_info'].get('flops_str', 'N/A')}")
+    # # Get model info
+    # print("\n[1/5] Getting model information...")
+    # results["model_info"] = get_model_info(cfg)
+    # print(f"  Parameters: {results['model_info'].get('parameters_str', 'N/A')}")
+    # print(f"  FLOPs: {results['model_info'].get('flops_str', 'N/A')}")
     
     # Load model
-    print("\n[2/5] Loading model...")
+    print("\n[1/5] Loading model...")
     model = cfg.model.to(device)
     
     if args.resume:
