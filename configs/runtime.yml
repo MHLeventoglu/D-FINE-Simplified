@@ -7,7 +7,7 @@ sync_bn: True
 find_unused_parameters: False
 
 
-use_amp: False
+use_amp: True
 scaler:
   type: GradScaler
   enabled: True
@@ -19,6 +19,6 @@ ema:
   decay: 0.9999
   warmups: 1000
 
-use_wandb: False
-project_name: D-FINE # for wandb
+use_wandb: True
+project_name: D-FINE-30k # for wandb
 exp_name: baseline # wandb experiment name
