@@ -11,8 +11,8 @@ train_dataloader:
   type: DataLoader
   dataset:
     type: CocoDetection
-    img_folder: /data/yourdataset/train
-    ann_file: /data/yourdataset/train/train.json
+    img_folder: /content/dataset/train
+    ann_file: /content/dataset/train/train.json
     return_masks: False
     transforms:
       type: Compose
@@ -28,8 +28,8 @@ val_dataloader:
   type: DataLoader
   dataset:
     type: CocoDetection
-    img_folder: /data/yourdataset/val
-    ann_file: /data/yourdataset/val/val.json
+    img_folder: /content/dataset/val
+    ann_file: /content/dataset/val/val.json
     return_masks: False
     transforms:
       type: Compose
