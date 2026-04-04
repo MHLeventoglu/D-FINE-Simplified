@@ -6,7 +6,7 @@ __include__: [
   './include/dfine_hgnetv2.yml',
 ]
 
-output_dir: /content/drive/MyDrive/Celebi_Egitim_Sonuclari/D-FINE_n_30k
+output_dir: /content/drive/MyDrive/Celebi_Egitim_Sonuclari/D-FINE_n_27k
 
 
 DFINE:
